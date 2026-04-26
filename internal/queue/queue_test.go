@@ -118,3 +118,127 @@ func TestManager_EnqueueTimestampPreserved(t *testing.T) {
 		t.Fatalf("want %v, got %v", ts, got.EnqueueTime)
 	}
 }
+
+// TestGracefulShutdown_InFlightMessagesRequeued verifies that a message dequeued
+// (in-flight) but never ACKed before shutdown is redelivered on the next start,
+// because the WAL record is never tombstoned.
+func TestGracefulShutdown_InFlightMessagesRequeued(t *testing.T) {
+	walDir := t.TempDir()
+
+	func() {
+		m, err := NewManager(walDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.Enqueue(newMsg("msg-1", "orders"))
+
+		// Simulate dispatch: dequeue the message (marks it in-flight) without ACKing.
+		dequeued := make(chan struct{}, 1)
+		go func() {
+			m.Dequeue("orders")
+			dequeued <- struct{}{}
+		}()
+		<-dequeued
+
+		m.BeginShutdown()
+		m.Close()
+	}()
+
+	// On the next start, WAL replay restores the un-tombstoned message.
+	m2, err := NewManager(walDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m2.Close()
+
+	got := make(chan core.Message, 1)
+	go func() {
+		msg, ok := m2.Dequeue("orders")
+		if ok {
+			got <- msg
+		}
+	}()
+
+	select {
+	case msg := <-got:
+		if string(msg.ID) != "msg-1" {
+			t.Fatalf("want msg-1 redelivered, got %s", msg.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-flight message at shutdown must be redelivered on next start")
+	}
+}
+
+// TestBeginShutdown_RejectsNewEnqueues verifies that Enqueue returns an error
+// after BeginShutdown is called.
+func TestBeginShutdown_RejectsNewEnqueues(t *testing.T) {
+	m, err := NewManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	m.BeginShutdown()
+
+	if err := m.Enqueue(newMsg("1", "orders")); err == nil {
+		t.Fatal("Enqueue after BeginShutdown must return an error")
+	}
+}
+
+// TestCompact_PreservesMessages verifies that compaction produces a WAL that
+// replays identically (only un-tombstoned messages survive).
+func TestCompact_PreservesMessages(t *testing.T) {
+	walDir := t.TempDir()
+	m, err := NewManager(walDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m.Enqueue(newMsg("1", "orders"))
+	m.Enqueue(newMsg("2", "orders"))
+	m.Enqueue(newMsg("3", "orders"))
+	m.WriteTombstone("2", "orders")
+
+	if err := m.Compact("orders"); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	// Enqueue after compaction must still work.
+	if err := m.Enqueue(newMsg("4", "orders")); err != nil {
+		t.Fatalf("Enqueue after compact: %v", err)
+	}
+
+	m.Close()
+
+	// Reopen and verify: messages 1, 3, 4 must survive; 2 was tombstoned.
+	m2, err := NewManager(walDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m2.Close()
+
+	var ids []string
+	for i := 0; i < 3; i++ {
+		got := make(chan core.Message, 1)
+		go func() {
+			msg, ok := m2.Dequeue("orders")
+			if ok {
+				got <- msg
+			}
+		}()
+		select {
+		case msg := <-got:
+			ids = append(ids, string(msg.ID))
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for message %d", i+1)
+		}
+	}
+
+	want := []string{"1", "3", "4"}
+	for i, id := range ids {
+		if id != want[i] {
+			t.Fatalf("position %d: want %s, got %s", i, want[i], id)
+		}
+	}
+}
+

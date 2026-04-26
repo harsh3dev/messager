@@ -111,3 +111,22 @@ func (a *AckManager) nackEntry(entry inFlightEntry) error {
 	}
 	return a.manager.Enqueue(entry.message.WithRetry())
 }
+
+// WaitDrained blocks until the in-flight map is empty or the timeout elapses.
+// Returns true if the map drained within the timeout.
+func (a *AckManager) WaitDrained(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		a.mu.Lock()
+		n := len(a.inFlight)
+		a.mu.Unlock()
+		if n == 0 {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	a.mu.Lock()
+	n := len(a.inFlight)
+	a.mu.Unlock()
+	return n == 0
+}

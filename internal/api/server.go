@@ -92,9 +92,6 @@ func (s *Server) Subscribe(stream grpc.BidiStreamingServer[proto.ConsumerMessage
 		return status.Errorf(codes.Internal, "create consumer: %v", err)
 	}
 	s.registry.Register(consumer)
-	defer s.registry.Deregister(consumer.ID)
-
-	// Start a dispatcher for this queue if one is not already running.
 	s.ensureDispatcher(queueName)
 
 	done := make(chan error, 2)
@@ -138,7 +135,22 @@ func (s *Server) Subscribe(stream grpc.BidiStreamingServer[proto.ConsumerMessage
 		}
 	}()
 
-	return <-done
+	streamErr := <-done
+
+	// Deregister so the dispatcher stops selecting this consumer.
+	s.registry.Deregister(consumer.ID)
+
+	// Drain messages buffered in consumer.Send that were never forwarded.
+	// These are already registered in the AckManager; NACK them immediately
+	// so they are requeued (or DLQ'd) rather than waiting for the timeout scanner.
+	for {
+		select {
+		case msg := <-consumer.Send:
+			_ = s.ackManager.Nack(msg.ID)
+		default:
+			return streamErr
+		}
+	}
 }
 
 // ensureDispatcher starts a dispatcher goroutine for the given queue if one is not already running.

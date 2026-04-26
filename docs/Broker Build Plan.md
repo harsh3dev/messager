@@ -177,23 +177,23 @@
 
 ## Phase 7 — Timeout · Retry · DLQ
 
-- [ ] Implement timeout scanner
-  - [ ] Background goroutine, configurable scan interval
-  - [ ] Iterate in-flight map, flag entries exceeding timeout threshold
-  - [ ] Treat timed-out entry as implicit NACK (requeue via Ack Manager)
-- [ ] Implement retry counter
-  - [ ] Retry count stored on `Message` and persisted in WAL record
-  - [ ] Increment on each NACK or timeout requeue
-- [ ] Implement DLQ
-  - [ ] Configure max retry threshold
-  - [ ] On retry count > threshold → move message to DLQ instead of requeueing
-  - [ ] DLQ is a WAL-backed queue (separate file, same record format)
-  - [ ] DLQ contents survive broker restart
-- [ ] Unit tests
-  - [ ] Kill consumer mid-delivery → message reassigned after timeout
-  - [ ] Message exceeding max retries → lands in DLQ, not re-delivered
-  - [ ] DLQ persists across restart
-  - [ ] No message stuck in-flight forever
+- [x] Implement timeout scanner
+  - [x] Background goroutine, configurable scan interval
+  - [x] Iterate in-flight map, flag entries exceeding timeout threshold
+  - [x] Treat timed-out entry as implicit NACK (requeue via Ack Manager)
+- [x] Implement retry counter
+  - [x] Retry count stored on `Message` and persisted in WAL record
+  - [x] Increment on each NACK or timeout requeue
+- [x] Implement DLQ
+  - [x] Configure max retry threshold
+  - [x] On retry count > threshold → move message to DLQ instead of requeueing
+  - [x] DLQ is a WAL-backed queue (separate file, same record format)
+  - [x] DLQ contents survive broker restart
+- [x] Unit tests
+  - [x] Kill consumer mid-delivery → message reassigned after timeout
+  - [x] Message exceeding max retries → lands in DLQ, not re-delivered
+  - [x] DLQ persists across restart
+  - [x] No message stuck in-flight forever
 
 **Done when:** system self-recovers from consumer failures; poison messages are isolated.
 

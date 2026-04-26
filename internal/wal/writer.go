@@ -11,9 +11,11 @@ import (
 
 // Writer handles append-only WAL writes for a single queue
 type Writer struct {
-	mu   sync.Mutex
-	file *os.File
-	path string
+	mu     sync.Mutex
+	file   *os.File
+	path   string
+	walDir string
+	queue  string
 }
 
 // NewWriter creates/open WAL file for a queue
@@ -30,8 +32,10 @@ func NewWriter(dir, queue string) (*Writer, error) {
 	}
 
 	return &Writer{
-		file: f,
-		path: path,
+		file:   f,
+		path:   path,
+		walDir: dir,
+		queue:  queue,
 	}, nil
 }
 

@@ -164,3 +164,63 @@ func TestReplay_PreservesRetryCount(t *testing.T) {
 		t.Fatalf("want RetryCount=3, got %d", got[0].RetryCount)
 	}
 }
+
+func TestCompact_DropsTombstonedRecords(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "q")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w.WriteMessage(core.Message{ID: "1", Queue: "q", Payload: []byte("keep"), EnqueueTime: time.Now()})
+	w.WriteMessage(core.Message{ID: "2", Queue: "q", Payload: []byte("ack"), EnqueueTime: time.Now()})
+	w.WriteMessage(core.Message{ID: "3", Queue: "q", Payload: []byte("keep"), EnqueueTime: time.Now()})
+	w.WriteTombstone("2")
+
+	statBefore, _ := os.Stat(dir + "/q.wal")
+
+	if err := w.Compact(); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	// WAL must be smaller — tombstoned record and its tombstone are gone.
+	statAfter, _ := os.Stat(dir + "/q.wal")
+	if statAfter.Size() >= statBefore.Size() {
+		t.Fatalf("WAL should shrink after compact: before=%d after=%d", statBefore.Size(), statAfter.Size())
+	}
+
+	// Replay must return exactly the two un-tombstoned messages in order.
+	got, err := NewReader(dir, "q").Replay()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 messages after compact, got %d", len(got))
+	}
+	if string(got[0].ID) != "1" || string(got[1].ID) != "3" {
+		t.Fatalf("wrong IDs after compact: %v %v", got[0].ID, got[1].ID)
+	}
+}
+
+func TestCompact_WriterUsableAfterCompact(t *testing.T) {
+	dir := t.TempDir()
+	w, _ := NewWriter(dir, "q")
+	w.WriteMessage(core.Message{ID: "1", Queue: "q", Payload: []byte("a"), EnqueueTime: time.Now()})
+	w.WriteTombstone("1")
+
+	if err := w.Compact(); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	// Writer must still accept new records after compaction.
+	if err := w.WriteMessage(core.Message{ID: "2", Queue: "q", Payload: []byte("b"), EnqueueTime: time.Now()}); err != nil {
+		t.Fatalf("write after compact: %v", err)
+	}
+	w.Close()
+
+	got, _ := NewReader(dir, "q").Replay()
+	if len(got) != 1 || string(got[0].ID) != "2" {
+		t.Fatalf("want only msg-2 after compact+write, got %v", got)
+	}
+}
+
