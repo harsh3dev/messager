@@ -31,9 +31,10 @@ type Message struct {
 	Queue       string
 	Payload     []byte
 	Headers     []Header
-	RetryCount  int32
-	EnqueueTime time.Time
-	Status      DeliveryStatus
+	RetryCount   int32
+	EnqueueTime  time.Time
+	DispatchedAt time.Time
+	Status       DeliveryStatus
 }
 
 func (m Message) WithRetry() Message {
