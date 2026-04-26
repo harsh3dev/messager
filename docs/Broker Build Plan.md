@@ -100,25 +100,25 @@
 
 ## Phase 4 — Connection Manager
 
-- [ ] Define `Consumer` struct
-  - [ ] Consumer ID
-  - [ ] Queue name
-  - [ ] Send channel (to dispatcher)
-  - [ ] Prefetch limit
-  - [ ] In-flight counter (atomic)
-  - [ ] Connected-at timestamp
-- [ ] Implement consumer registry (per queue)
-  - [ ] Register consumer on subscribe
-  - [ ] Deregister consumer on disconnect
-  - [ ] Thread-safe access (multiple goroutines read the registry)
-- [ ] Expose query interface for dispatcher
-  - [ ] `EligibleConsumers(queue)` — returns consumers where in-flight < prefetch
-  - [ ] `IncrementInFlight(consumerID)`
-  - [ ] `DecrementInFlight(consumerID)`
-- [ ] Unit tests
-  - [ ] Consumer disconnect → removed from registry cleanly
-  - [ ] Multiple consumers → all tracked correctly
-  - [ ] `EligibleConsumers` respects prefetch limits
+- [x] Define `Consumer` struct
+  - [x] Consumer ID
+  - [x] Queue name
+  - [x] Send channel (to dispatcher)
+  - [x] Prefetch limit
+  - [x] In-flight counter (atomic)
+  - [x] Connected-at timestamp
+- [x] Implement consumer registry (per queue)
+  - [x] Register consumer on subscribe
+  - [x ] Deregister consumer on disconnect
+  - [x] Thread-safe access (multiple goroutines read the registry)
+- [x] Expose query interface for dispatcher
+  - [x] `EligibleConsumers(queue)` — returns consumers where in-flight < prefetch
+  - [x] `IncrementInFlight(consumerID)`
+  - [x] `DecrementInFlight(consumerID)`
+- [x] Unit tests
+  - [x] Consumer disconnect → removed from registry cleanly
+  - [x] Multiple consumers → all tracked correctly
+  - [x] `EligibleConsumers` respects prefetch limits
 
 **Done when:** system knows who can receive messages and can enforce prefetch limits.
 
