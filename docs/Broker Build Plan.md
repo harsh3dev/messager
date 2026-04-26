@@ -4,25 +4,25 @@
 
 ## Phase 0 — Foundation
 
-- [ ] Define `.proto` file
-  - [ ] `Publish` RPC (unary)
-  - [ ] `Subscribe` RPC (bidirectional stream)
-  - [ ] `AckRequest` message shape (message ID, ACK / NACK signal)
-  - [ ] `Message` shape (ID, payload, headers, retry count, enqueue timestamp)
-- [ ] Define core Go types
-  - [ ] `MessageID` type
-  - [ ] `Message` struct (ID, payload, metadata, retry count, DLQ flag)
-  - [ ] Delivery status constants (pending, in-flight, acked, nacked, dead)
-- [ ] Scaffold project structure
-  - [ ] `cmd/` — entry point
-  - [ ] `internal/wal/` — WAL package
-  - [ ] `internal/queue/` — queue manager package
-  - [ ] `internal/dispatcher/` — dispatcher package
-  - [ ] `internal/connmgr/` — connection manager package
-  - [ ] `internal/ackmgr/` — ack manager package
-  - [ ] `internal/retry/` — retry + DLQ package
-  - [ ] `proto/` — generated gRPC code
-  - [ ] `data/` — WAL files at runtime
+- [x] Define `.proto` file
+  - [x] `Publish` RPC (unary)
+  - [x] `Subscribe` RPC (bidirectional stream)
+  - [x] `AckRequest` message shape (message ID, ACK / NACK signal)
+  - [x] `Message` shape (ID, payload, headers, retry count, enqueue timestamp)
+- [x] Define core Go types
+  - [x] `MessageID` type
+  - [x] `Message` struct (ID, payload, metadata, retry count, DLQ flag)
+  - [x] Delivery status constants (pending, in-flight, acked, nacked, dead)
+- [x] Scaffold project structure
+  - [x] `cmd/` — entry point
+  - [x] `internal/wal/` — WAL package
+  - [x] `internal/queue/` — queue manager package
+  - [x] `internal/dispatcher/` — dispatcher package
+  - [x] `internal/connmgr/` — connection manager package
+  - [x] `internal/ackmgr/` — ack manager package
+  - [x] `internal/retry/` — retry + DLQ package
+  - [x] `proto/` — generated gRPC code
+  - [x] `data/` — WAL files at runtime
 
 **Done when:** proto compiles, all packages exist, core types are importable across packages.
 
