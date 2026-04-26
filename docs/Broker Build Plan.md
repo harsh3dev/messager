@@ -58,20 +58,20 @@
 
 ## Phase 2 — Queue Manager
 
-- [ ] Implement in-memory FIFO queue
-  - [ ] Thread-safe enqueue / dequeue
-  - [ ] Blocking dequeue (dispatcher blocks until message available)
-- [ ] Implement enqueue pipeline
-  - [ ] Write to WAL first
-  - [ ] Add to in-memory queue only after WAL write succeeds
-- [ ] Implement startup replay
-  - [ ] Read WAL via Phase 1 reader
-  - [ ] Re-enqueue all returned (un-tombstoned) messages
-  - [ ] Preserve original enqueue timestamp (not reset to now)
-- [ ] Unit tests
-  - [ ] Publish → message appears in queue
-  - [ ] Restart → queue is restored from WAL
-  - [ ] Enqueue failure (WAL error) does not add message to memory
+- [x] Implement in-memory FIFO queue
+  - [x] Thread-safe enqueue / dequeue
+  - [x] Blocking dequeue (dispatcher blocks until message available)
+- [x] Implement enqueue pipeline
+  - [x] Write to WAL first
+  - [x] Add to in-memory queue only after WAL write succeeds
+- [x] Implement startup replay
+  - [x] Read WAL via Phase 1 reader
+  - [x] Re-enqueue all returned (un-tombstoned) messages
+  - [x] Preserve original enqueue timestamp (not reset to now)
+- [x] Unit tests
+  - [x] Publish → message appears in queue
+  - [x] Restart → queue is restored from WAL
+  - [x] Enqueue failure (WAL error) does not add message to memory
 
 **Done when:** queue is consistent across restarts; in-memory state always derived from WAL.
 
@@ -79,20 +79,20 @@
 
 ## Phase 3 — gRPC API Layer
 
-- [ ] Implement `Publish` endpoint
-  - [ ] Receive message from producer
-  - [ ] Hand off to Queue Manager enqueue pipeline
-  - [ ] Return acknowledgement to producer
-- [ ] Implement `Subscribe` endpoint (bidirectional stream)
-  - [ ] Accept consumer connection with queue name and prefetch limit
-  - [ ] Spawn send goroutine (server → consumer: push `Message`)
-  - [ ] Spawn receive goroutine (consumer → server: read `AckRequest`)
-  - [ ] Route incoming ACK/NACK to Ack Manager (Phase 6 stub for now)
-  - [ ] Handle stream close / consumer disconnect cleanly
-- [ ] Unit tests
-  - [ ] Producer can publish a message
-  - [ ] Consumer can establish a persistent stream connection
-  - [ ] Stream closes without panic on consumer disconnect
+- [x] Implement `Publish` endpoint
+  - [x] Receive message from producer
+  - [x] Hand off to Queue Manager enqueue pipeline
+  - [x] Return acknowledgement to producer
+- [x] Implement `Subscribe` endpoint (bidirectional stream)
+  - [x] Accept consumer connection with queue name and prefetch limit
+  - [x] Spawn send goroutine (server → consumer: push `Message`)
+  - [x] Spawn receive goroutine (consumer → server: read `AckRequest`)
+  - [x] Route incoming ACK/NACK to Ack Manager (Phase 6 stub for now)
+  - [x] Handle stream close / consumer disconnect cleanly
+- [x] Unit tests
+  - [x] Producer can publish a message
+  - [x] Consumer can establish a persistent stream connection
+  - [x] Stream closes without panic on consumer disconnect
 
 **Done when:** basic producer/consumer communication works over gRPC streams.
 
