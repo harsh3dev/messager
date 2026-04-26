@@ -45,8 +45,8 @@ END=$((SECONDS + 60))
 while (( SECONDS < END )); do
     DONE=$(grep -c "ACK" "$LOG" 2>/dev/null || true)
 
-    printf "\r  processed: %-3d / 50   broker alive: %s" \
-        "$(kill -0 \"${SERVER_PID}\" 2>/dev/null && echo yes || echo NO)"
+    ALIVE=$(kill -0 "${SERVER_PID}" 2>/dev/null && echo yes || echo NO)
+    printf "\r  processed: %-3d / 50   broker alive: %s" "$DONE" "$ALIVE"
 
     (( DONE >= 10 )) && break
     sleep 1
