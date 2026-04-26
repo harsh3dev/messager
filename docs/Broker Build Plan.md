@@ -201,28 +201,28 @@
 
 ## Phase 8 — Hardening
 
-- [ ] Implement WAL compaction
-  - [ ] Trigger: message count threshold or time interval (configurable)
-  - [ ] Read current WAL segment
-  - [ ] Drop all tombstoned records
-  - [ ] Write clean segment atomically (write temp file, rename)
-  - [ ] Verify compacted WAL before replacing original
-- [ ] Implement graceful shutdown
-  - [ ] Stop accepting new Publish requests
-  - [ ] Drain dispatcher loop (no new dispatches)
-  - [ ] Wait for in-flight map to drain (or timeout)
-  - [ ] Flush and close WAL
-- [ ] Implement in-flight recovery on restart
-  - [ ] Messages replayed from WAL with retry count > 0 → treated as NACK candidates
-  - [ ] Re-enqueued with existing retry count preserved (not reset)
-- [ ] Harden error paths
-  - [ ] WAL write failure → do not enqueue, return error to producer
-  - [ ] Consumer send failure → treat as NACK immediately
-  - [ ] Registry access on nil consumer → safe no-op
-- [ ] Unit tests
-  - [ ] Compaction produces a WAL that replays identically to original
-  - [ ] Graceful shutdown with in-flight messages → messages requeued on next start
-  - [ ] Hard kill mid-write → clean recovery on restart
+- [x] Implement WAL compaction
+  - [x] Trigger: message count threshold or time interval (configurable)
+  - [x] Read current WAL segment
+  - [x] Drop all tombstoned records
+  - [x] Write clean segment atomically (write temp file, rename)
+  - [x] Verify compacted WAL before replacing original
+- [x] Implement graceful shutdown
+  - [x] Stop accepting new Publish requests
+  - [x] Drain dispatcher loop (no new dispatches)
+  - [x] Wait for in-flight map to drain (or timeout)
+  - [x] Flush and close WAL
+- [x] Implement in-flight recovery on restart
+  - [x] Messages replayed from WAL with retry count > 0 → treated as NACK candidates
+  - [x] Re-enqueued with existing retry count preserved (not reset)
+- [x] Harden error paths
+  - [x] WAL write failure → do not enqueue, return error to producer
+  - [x] Consumer send failure → treat as NACK immediately
+  - [x] Registry access on nil consumer → safe no-op
+- [x] Unit tests
+  - [x] Compaction produces a WAL that replays identically to original
+  - [x] Graceful shutdown with in-flight messages → messages requeued on next start
+  - [x] Hard kill mid-write → clean recovery on restart
 
 **Done when:** system handles operational edge cases safely; WAL does not grow unbounded.
 
