@@ -18,6 +18,100 @@ ACK/NACK → Ack Manager → WAL tombstone or requeue
                      DLQ (max retries exceeded)
 ```
 
+![System Flow Diagram](docs/system-flow-2026-04-12-2123.png)
+
+
+## Message Flow
+
+
+```mermaid
+sequenceDiagram
+    participant P as Publisher
+    participant GRPC as gRPC Server
+    participant WAL as WAL
+    participant QM as Queue Manager
+    participant D as Dispatcher
+    participant AM as Ack Manager
+    participant Reg as Registry (ConnMgr)
+    participant C as Consumer
+
+    rect rgb(220, 240, 255)
+        Note over C,Reg: 1 · Consumer Registration
+        C->>+GRPC: Subscribe(queue="orders", prefetch=5)
+        GRPC->>Reg: Register(Consumer{id, prefetch, Send chan})
+        GRPC->>D: ensureDispatcher("orders") — start goroutine if first subscriber
+        GRPC-->>C: stream open — broker will push messages
+    end
+
+    rect rgb(220, 255, 220)
+        Note over P,QM: 2 · Publish
+        P->>GRPC: Publish(queue="orders", payload="order-1")
+        GRPC->>WAL: Append record (msg, status=pending)
+        GRPC->>QM: Enqueue(msg) → in-memory FIFO
+        GRPC-->>P: PublishResponse{id="abc123…"}
+    end
+
+    rect rgb(255, 245, 210)
+        Note over D,C: 3 · Dispatch (least-in-flight routing)
+        D->>QM: Dequeue("orders") — blocks until message available
+        QM-->>D: msg
+        D->>Reg: EligibleConsumers("orders")
+        Reg-->>D: [consumer-1 (in-flight=0), consumer-2 (in-flight=3)]
+        Note over D: Pick consumer with lowest in-flight count
+        D->>Reg: IncrementInFlight(consumer-1)
+        D->>AM: Register(msg, consumer-1) ← must happen BEFORE channel send
+        D->>C: msg pushed via consumer.Send → gRPC stream
+    end
+
+    rect rgb(210, 255, 240)
+        Note over C,AM: 4a · ACK path — message delivered successfully
+        C->>GRPC: AckRequest{id="abc123…", outcome=ACK}
+        GRPC->>AM: Ack(id)
+        AM->>WAL: WriteTombstone(id) — record marked dead in WAL
+        AM->>Reg: DecrementInFlight(consumer-1)
+    end
+
+    rect rgb(255, 220, 220)
+        Note over C,QM: 4b · NACK path — consumer rejects message
+        C->>GRPC: AckRequest{id="abc123…", outcome=NACK}
+        GRPC->>AM: Nack(id)
+        AM->>Reg: DecrementInFlight(consumer-1)
+        alt retry count < MAX_RETRIES
+            AM->>QM: Enqueue(msg with retry+1)
+            Note over D: Dispatcher picks up the retried message
+        else retry count == MAX_RETRIES
+            AM->>QM: Enqueue(msg → queue="orders.dlq", status=dead)
+        end
+    end
+
+    rect rgb(235, 235, 235)
+        Note over AM,QM: 4c · Timeout path — consumer never responded
+        Note over AM: Retry Scanner fires every SCAN_INTERVAL
+        AM->>AM: ScanAndTimeout(DISPATCH_TIMEOUT)
+        Note over AM: Find all in-flight entries older than DISPATCH_TIMEOUT
+        AM->>Reg: DecrementInFlight(consumer-1)
+        alt retry count < MAX_RETRIES
+            AM->>QM: Enqueue(msg.WithRetry())
+        else exhausted
+            AM->>QM: Enqueue(msg → "orders.dlq")
+        end
+    end
+```
+
+### Message states
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending : Publish (WAL append)
+    Pending --> InFlight : Dispatcher dequeues and pushes to consumer
+    InFlight --> Acked : Consumer sends ACK
+    InFlight --> Pending : Consumer sends NACK (retries remaining)
+    InFlight --> Pending : Retry Scanner timeout (retries remaining)
+    Pending --> Dead : NACK / timeout when retry == MAX_RETRIES
+    Acked --> [*] : WAL tombstone written — message gone
+    Dead --> [*] : Moved to orders.dlq WAL (DLQ consumer can subscribe)
+```
+
 **Key invariants:**
 - WAL write always precedes in-memory state change
 - In-flight count increments before send, decrements on ACK, NACK, or timeout
