@@ -126,24 +126,24 @@
 
 ## Phase 5 — Dispatcher + Flow Control
 
-- [ ] Implement dispatcher loop (one goroutine per queue)
-  - [ ] Block on queue dequeue until message available
-  - [ ] Query Connection Manager for eligible consumers
-  - [ ] If no eligible consumers — wait and retry (backoff)
-- [ ] Implement consumer selection (least in-flight)
-  - [ ] Sort eligible consumers by in-flight count ascending
-  - [ ] Select the first (lowest in-flight)
-- [ ] Implement prefetch enforcement (flow control)
-  - [ ] Only select consumers where in-flight < prefetch
-  - [ ] Naturally throttles slow consumers; fast consumers get more load
-- [ ] Implement message push
-  - [ ] Call `IncrementInFlight` on Connection Manager *before* sending
-  - [ ] Send message to consumer via send channel
-  - [ ] Record dispatch timestamp (for timeout scanner in Phase 7)
-- [ ] Unit tests
-  - [ ] Multiple consumers → load distributed by in-flight count
-  - [ ] Consumer at prefetch limit → receives no further messages
-  - [ ] No consumer available → dispatcher waits without blocking the queue
+- [x] Implement dispatcher loop (one goroutine per queue)
+  - [x] Block on queue dequeue until message available
+  - [x] Query Connection Manager for eligible consumers
+  - [x] If no eligible consumers — wait and retry (backoff)
+- [x] Implement consumer selection (least in-flight)
+  - [x] Sort eligible consumers by in-flight count ascending
+  - [x] Select the first (lowest in-flight)
+- [x] Implement prefetch enforcement (flow control)
+  - [x] Only select consumers where in-flight < prefetch
+  - [x] Naturally throttles slow consumers; fast consumers get more load
+- [x] Implement message push
+  - [x] Call `IncrementInFlight` on Connection Manager *before* sending
+  - [x] Send message to consumer via send channel
+  - [x] Record dispatch timestamp (for timeout scanner in Phase 7)
+- [x] Unit tests
+  - [x] Multiple consumers → load distributed by in-flight count
+  - [x] Consumer at prefetch limit → receives no further messages
+  - [x] No consumer available → dispatcher waits without blocking the queue
 
 **Done when:** messages flow to consumers; slow consumers are naturally throttled.
 

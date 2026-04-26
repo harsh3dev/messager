@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/harsh3dev/messager/internal/ackmgr"
 	"github.com/harsh3dev/messager/internal/connmgr"
 	"github.com/harsh3dev/messager/internal/core"
 	"github.com/harsh3dev/messager/internal/dispatcher"
@@ -23,7 +24,8 @@ func newTestDispatcher(t *testing.T) (*dispatcher.Dispatcher, *queue.Manager, *c
 	}
 	t.Cleanup(func() { manager.Close() })
 	registry := connmgr.NewRegistry()
-	return dispatcher.NewDispatcher(manager, registry), manager, registry
+	ackManager := ackmgr.NewAckManager(manager, registry)
+	return dispatcher.NewDispatcher(manager, registry, ackManager), manager, registry
 }
 
 func TestDispatcher_LoadDistributedByInFlight(t *testing.T) {

@@ -5,9 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io"
+	"sync"
 	"time"
 
+	"github.com/harsh3dev/messager/internal/ackmgr"
+	"github.com/harsh3dev/messager/internal/connmgr"
 	"github.com/harsh3dev/messager/internal/core"
+	"github.com/harsh3dev/messager/internal/dispatcher"
 	"github.com/harsh3dev/messager/internal/queue"
 	proto "github.com/harsh3dev/messager/proto/gen"
 	"google.golang.org/grpc"
@@ -18,11 +22,24 @@ import (
 // Server implements the BrokerServer gRPC interface.
 type Server struct {
 	proto.UnimplementedBrokerServer
-	manager *queue.Manager
+	ctx        context.Context
+	manager    *queue.Manager
+	registry   *connmgr.Registry
+	ackManager *ackmgr.AckManager
+	disp       *dispatcher.Dispatcher
+	mu         sync.Mutex
+	started    map[string]struct{} // queues with a running dispatcher goroutine
 }
 
-func NewServer(manager *queue.Manager) *Server {
-	return &Server{manager: manager}
+func NewServer(ctx context.Context, manager *queue.Manager, registry *connmgr.Registry, ackManager *ackmgr.AckManager, disp *dispatcher.Dispatcher) *Server {
+	return &Server{
+		ctx:        ctx,
+		manager:    manager,
+		registry:   registry,
+		ackManager: ackManager,
+		disp:       disp,
+		started:    make(map[string]struct{}),
+	}
 }
 
 func (s *Server) Publish(ctx context.Context, req *proto.PublishRequest) (*proto.PublishResponse, error) {
@@ -63,34 +80,42 @@ func (s *Server) Subscribe(stream grpc.BidiStreamingServer[proto.ConsumerMessage
 	if subscribeReq == nil {
 		return status.Error(codes.InvalidArgument, "first message must be a SubscribeRequest")
 	}
+
 	queueName := subscribeReq.Queue
+	prefetchLimit := subscribeReq.PrefetchLimit
+	if prefetchLimit <= 0 {
+		prefetchLimit = 1
+	}
+
+	consumer, err := connmgr.NewConsumer(queueName, prefetchLimit)
+	if err != nil {
+		return status.Errorf(codes.Internal, "create consumer: %v", err)
+	}
+	s.registry.Register(consumer)
+	defer s.registry.Deregister(consumer.ID)
+
+	// Start a dispatcher for this queue if one is not already running.
+	s.ensureDispatcher(queueName)
 
 	done := make(chan error, 2)
 
-	// Send goroutine: pull messages from the queue and push to the consumer.
-	// May stay blocked in Dequeue after the consumer disconnects; it unblocks
-	// when the Manager closes at server shutdown.
+	// Send goroutine: reads messages pushed by the dispatcher and forwards them to the consumer stream.
 	go func() {
 		for {
-			msg, ok := s.manager.Dequeue(queueName)
-			if !ok {
-				done <- nil
-				return
-			}
 			select {
+			case msg := <-consumer.Send:
+				if err := stream.Send(coreToProtoEvent(msg)); err != nil {
+					done <- err
+					return
+				}
 			case <-ctx.Done():
 				done <- nil
-				return
-			default:
-			}
-			if err := stream.Send(coreToProtoEvent(msg)); err != nil {
-				done <- err
 				return
 			}
 		}
 	}()
 
-	// Recv goroutine: read ACK/NACK messages from the consumer.
+	// Recv goroutine: routes ACK/NACK from the consumer to the Ack Manager.
 	go func() {
 		for {
 			consumerMsg, err := stream.Recv()
@@ -103,12 +128,28 @@ func (s *Server) Subscribe(stream grpc.BidiStreamingServer[proto.ConsumerMessage
 				return
 			}
 			if ack := consumerMsg.GetAck(); ack != nil {
-				_ = ack // routed to Ack Manager in Phase 6
+				id := core.MessageID(ack.GetMessageId())
+				if ack.GetOutcome() == proto.AckOutcome_NACK {
+					_ = s.ackManager.Nack(id)
+				} else {
+					_ = s.ackManager.Ack(id)
+				}
 			}
 		}
 	}()
 
 	return <-done
+}
+
+// ensureDispatcher starts a dispatcher goroutine for the given queue if one is not already running.
+func (s *Server) ensureDispatcher(queueName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.started[queueName]; ok {
+		return
+	}
+	s.started[queueName] = struct{}{}
+	go s.disp.Run(s.ctx, queueName)
 }
 
 func coreToProtoEvent(msg core.Message) *proto.SubscribeEvent {

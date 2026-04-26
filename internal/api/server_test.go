@@ -6,8 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/harsh3dev/messager/internal/ackmgr"
 	"github.com/harsh3dev/messager/internal/api"
+	"github.com/harsh3dev/messager/internal/connmgr"
 	"github.com/harsh3dev/messager/internal/core"
+	"github.com/harsh3dev/messager/internal/dispatcher"
 	"github.com/harsh3dev/messager/internal/queue"
 	proto "github.com/harsh3dev/messager/proto/gen"
 	"google.golang.org/grpc"
@@ -24,9 +27,16 @@ func newTestClient(t *testing.T) (proto.BrokerClient, *queue.Manager) {
 	}
 	t.Cleanup(func() { manager.Close() })
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	registry := connmgr.NewRegistry()
+	ackMgr := ackmgr.NewAckManager(manager, registry)
+	disp := dispatcher.NewDispatcher(manager, registry, ackMgr)
+
 	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
-	proto.RegisterBrokerServer(grpcServer, api.NewServer(manager))
+	proto.RegisterBrokerServer(grpcServer, api.NewServer(ctx, manager, registry, ackMgr, disp))
 	go grpcServer.Serve(listener) //nolint:errcheck
 	t.Cleanup(grpcServer.Stop)
 

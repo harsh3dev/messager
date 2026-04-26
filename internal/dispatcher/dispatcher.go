@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/harsh3dev/messager/internal/ackmgr"
 	"github.com/harsh3dev/messager/internal/connmgr"
 	"github.com/harsh3dev/messager/internal/core"
 	"github.com/harsh3dev/messager/internal/queue"
@@ -15,16 +16,18 @@ const retryInterval = 5 * time.Millisecond
 type Dispatcher struct {
 	queueManager *queue.Manager
 	registry     *connmgr.Registry
+	ackManager   *ackmgr.AckManager
 }
 
-func NewDispatcher(queueManager *queue.Manager, registry *connmgr.Registry) *Dispatcher {
+func NewDispatcher(queueManager *queue.Manager, registry *connmgr.Registry, ackManager *ackmgr.AckManager) *Dispatcher {
 	return &Dispatcher{
 		queueManager: queueManager,
 		registry:     registry,
+		ackManager:   ackManager,
 	}
 }
 
-// Run starts the dispatch loop for a single queue. Blocks until ctx is cancelled or the queue manager closes
+// Run starts the dispatch loop for a single queue. Blocks until ctx is cancelled or the queue manager closes.
 func (d *Dispatcher) Run(ctx context.Context, queueName string) {
 	for {
 		msg, ok := d.queueManager.Dequeue(queueName)
@@ -58,6 +61,7 @@ func (d *Dispatcher) Run(ctx context.Context, queueName string) {
 
 			select {
 			case consumer.Send <- msg:
+				d.ackManager.Register(msg, consumer.ID)
 			case <-ctx.Done():
 				// Undo the increment — message was never received.
 				d.registry.DecrementInFlight(consumer.ID)
