@@ -33,11 +33,26 @@ func NewAckManager(manager *queue.Manager, registry *connmgr.Registry, maxRetrie
 }
 
 // Register records a dispatched message as in-flight.
-// Called by the Dispatcher immediately after pushing the message to consumer.Send.
+// Called by the Dispatcher immediately before pushing the message to consumer.Send.
 func (a *AckManager) Register(msg core.Message, consumerID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.inFlight[msg.ID] = inFlightEntry{message: msg, consumerID: consumerID}
+}
+
+// Unregister removes a message from the in-flight map and decrements the
+// consumer's in-flight counter. Called by the Dispatcher when ctx is cancelled
+// after Register but before the consumer.Send channel write completes.
+func (a *AckManager) Unregister(id core.MessageID) {
+	a.mu.Lock()
+	entry, ok := a.inFlight[id]
+	if !ok {
+		a.mu.Unlock()
+		return
+	}
+	delete(a.inFlight, id)
+	a.mu.Unlock()
+	a.registry.DecrementInFlight(entry.consumerID)
 }
 
 // Ack removes the message from the in-flight map, decrements the consumer's in-flight

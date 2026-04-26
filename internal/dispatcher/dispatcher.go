@@ -59,12 +59,18 @@ func (d *Dispatcher) Run(ctx context.Context, queueName string) {
 			msg.DispatchedAt = time.Now()
 			msg.Status = core.StatusInFlight
 
+			// Register before sending so the AckManager always has the entry
+			// when the consumer sends back an ACK — even if the consumer is very
+			// fast and the ACK arrives before the channel write returns.
+			d.ackManager.Register(msg, consumer.ID)
+
 			select {
 			case consumer.Send <- msg:
-				d.ackManager.Register(msg, consumer.ID)
+				// successfully queued for delivery
 			case <-ctx.Done():
-				// Undo the increment — message was never received.
-				d.registry.DecrementInFlight(consumer.ID)
+				// Channel write was cancelled before the consumer could receive.
+				// Undo everything so the message isn't lost and in-flight is correct.
+				d.ackManager.Unregister(msg.ID)
 				return
 			}
 			break
