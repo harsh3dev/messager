@@ -73,35 +73,35 @@ func encode(rec record) ([]byte, error) {
 }
 
 // decode reads one record from buf.
-// Returns the record and true if the CRC is valid.
+// Returns the record, the number of bytes consumed, and true on success.
 // Returns false if the magic is wrong, the buffer is too short,
 // or the CRC does not match — all of which indicate a torn write.
-func decode(buf []byte) (record, bool) {
+func decode(buf []byte) (record, int, bool) {
 	if len(buf) < recordOverhead {
-		return record{}, false
+		return record{}, 0, false
 	}
 
 	if binary.BigEndian.Uint32(buf[0:4]) != magicVal {
-		return record{}, false
+		return record{}, 0, false
 	}
 
 	payloadLen := binary.BigEndian.Uint32(buf[5:9])
-	total := uint32(recordOverhead) + payloadLen
-	if uint32(len(buf)) < total {
-		return record{}, false
+	total := int(recordOverhead) + int(payloadLen)
+	if len(buf) < total {
+		return record{}, 0, false
 	}
 
 	// verify CRC before touching the payload
 	wantCRC := crc32.ChecksumIEEE(buf[4 : 9+payloadLen])
 	gotCRC := binary.BigEndian.Uint32(buf[9+payloadLen : 13+payloadLen])
 	if wantCRC != gotCRC {
-		return record{}, false
+		return record{}, 0, false
 	}
 
 	var rec record
 	if err := json.Unmarshal(buf[9:9+payloadLen], &rec); err != nil {
-		return record{}, false
+		return record{}, 0, false
 	}
 
-	return rec, true
+	return rec, total, true
 }

@@ -30,27 +30,27 @@
 
 ## Phase 1 — WAL (Durability Layer)
 
-- [ ] Define binary record format
-  - [ ] Magic header bytes (for record boundary detection)
-  - [ ] Length-prefix field
-  - [ ] Serialised message payload
-  - [ ] CRC32 checksum (for torn-write detection)
-- [ ] Implement append-only writer
-  - [ ] Sequential write only — no random access
-  - [ ] `fsync` after each write
-  - [ ] One WAL file per queue
-- [ ] Implement ACK tombstone records
-  - [ ] Tombstone format (same envelope, tombstone flag set)
-  - [ ] Write tombstone to WAL on ACK
-- [ ] Implement WAL reader / replay
-  - [ ] Read records sequentially from start
-  - [ ] Stop replay at first CRC mismatch (torn write boundary)
-  - [ ] Apply tombstones — skip tombstoned messages during replay
-  - [ ] Return only un-tombstoned messages to caller
-- [ ] Unit tests
-  - [ ] Replay after clean shutdown restores all messages
-  - [ ] Replay after mid-write crash does not corrupt state
-  - [ ] Tombstoned messages do not reappear on replay
+- [x] Define binary record format
+  - [x] Magic header bytes (for record boundary detection)
+  - [x] Length-prefix field
+  - [x] Serialised message payload
+  - [x] CRC32 checksum (for torn-write detection)
+- [x] Implement append-only writer
+  - [x] Sequential write only — no random access
+  - [x] `fsync` after each write
+  - [x] One WAL file per queue
+- [x] Implement ACK tombstone records
+  - [x] Tombstone format (same envelope, tombstone flag set)
+  - [x] Write tombstone to WAL on ACK
+- [x] Implement WAL reader / replay
+  - [x] Read records sequentially from start
+  - [x] Stop replay at first CRC mismatch (torn write boundary)
+  - [x] Apply tombstones — skip tombstoned messages during replay
+  - [x] Return only un-tombstoned messages to caller
+- [x] Unit tests
+  - [x] Replay after clean shutdown restores all messages
+  - [x] Replay after mid-write crash does not corrupt state
+  - [x] Tombstoned messages do not reappear on replay
 
 **Done when:** WAL is the source of truth; restart correctly restores only unacknowledged messages.
 
