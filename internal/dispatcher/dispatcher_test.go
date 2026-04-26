@@ -24,7 +24,7 @@ func newTestDispatcher(t *testing.T) (*dispatcher.Dispatcher, *queue.Manager, *c
 	}
 	t.Cleanup(func() { manager.Close() })
 	registry := connmgr.NewRegistry()
-	ackManager := ackmgr.NewAckManager(manager, registry)
+	ackManager := ackmgr.NewAckManager(manager, registry, 3)
 	return dispatcher.NewDispatcher(manager, registry, ackManager), manager, registry
 }
 

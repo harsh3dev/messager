@@ -25,7 +25,7 @@ func TestAck_RemovesFromWALAndDecrementsInFlight(t *testing.T) {
 	consumer, _ := connmgr.NewConsumer("orders", 5)
 	registry.Register(consumer)
 	registry.IncrementInFlight(consumer.ID) // simulate dispatcher increment
-	ackMgr := ackmgr.NewAckManager(manager, registry)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5)
 
 	msg := newMsg("msg-1")
 	if err := manager.Enqueue(msg); err != nil {
@@ -76,7 +76,7 @@ func TestNack_RequeuesWithIncrementedRetryCount(t *testing.T) {
 	consumer, _ := connmgr.NewConsumer("orders", 5)
 	registry.Register(consumer)
 	registry.IncrementInFlight(consumer.ID)
-	ackMgr := ackmgr.NewAckManager(manager, registry)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5)
 
 	msg := newMsg("msg-1")
 	if err := manager.Enqueue(msg); err != nil {
@@ -132,7 +132,7 @@ func TestAckNack_IdempotentForUnknownID(t *testing.T) {
 	manager, _ := queue.NewManager(t.TempDir())
 	t.Cleanup(func() { manager.Close() })
 	registry := connmgr.NewRegistry()
-	ackMgr := ackmgr.NewAckManager(manager, registry)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5)
 
 	if err := ackMgr.Ack("nonexistent"); err != nil {
 		t.Fatalf("Ack with unknown ID returned error: %v", err)

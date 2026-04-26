@@ -31,7 +31,7 @@ func newTestClient(t *testing.T) (proto.BrokerClient, *queue.Manager) {
 	t.Cleanup(cancel)
 
 	registry := connmgr.NewRegistry()
-	ackMgr := ackmgr.NewAckManager(manager, registry)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 3)
 	disp := dispatcher.NewDispatcher(manager, registry, ackMgr)
 
 	listener := bufconn.Listen(1 << 20)

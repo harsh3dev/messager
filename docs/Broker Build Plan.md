@@ -151,25 +151,25 @@
 
 ## Phase 6 — Ack Manager
 
-- [ ] Define in-flight map
-  - [ ] Key: `MessageID`
-  - [ ] Value: `InFlightEntry` (message, consumer ID, dispatch timestamp, retry count)
-  - [ ] Thread-safe access
-- [ ] Implement `Register` (called by Dispatcher on push)
-  - [ ] Add entry to in-flight map
-- [ ] Implement `Ack` handler
-  - [ ] Remove from in-flight map
-  - [ ] Call `DecrementInFlight` on Connection Manager
-  - [ ] Write ACK tombstone to WAL
-- [ ] Implement `Nack` handler
-  - [ ] Remove from in-flight map
-  - [ ] Call `DecrementInFlight` on Connection Manager
-  - [ ] Re-enqueue message (increment retry count)
-- [ ] Wire ACK/NACK from gRPC receive goroutine (Phase 3) into Ack Manager
-- [ ] Unit tests
-  - [ ] ACK → message removed permanently; tombstone written to WAL
-  - [ ] NACK → message reappears in queue with incremented retry count
-  - [ ] In-flight count decrements correctly on both ACK and NACK
+- [x] Define in-flight map
+  - [x] Key: `MessageID`
+  - [x] Value: `InFlightEntry` (message, consumer ID, dispatch timestamp, retry count)
+  - [x] Thread-safe access
+- [x] Implement `Register` (called by Dispatcher on push)
+  - [x] Add entry to in-flight map
+- [x] Implement `Ack` handler
+  - [x] Remove from in-flight map
+  - [x] Call `DecrementInFlight` on Connection Manager
+  - [x] Write ACK tombstone to WAL
+- [x] Implement `Nack` handler
+  - [x] Remove from in-flight map
+  - [x] Call `DecrementInFlight` on Connection Manager
+  - [x] Re-enqueue message (increment retry count)
+- [x] Wire ACK/NACK from gRPC receive goroutine (Phase 3) into Ack Manager
+- [x] Unit tests
+  - [x] ACK → message removed permanently; tombstone written to WAL
+  - [x] NACK → message reappears in queue with incremented retry count
+  - [x] In-flight count decrements correctly on both ACK and NACK
 
 **Done when:** system guarantees at-least-once delivery with correct state transitions.
 
