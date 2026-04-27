@@ -1,6 +1,7 @@
 package ackmgr_test
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/harsh3dev/messager/internal/queue"
 )
 
+func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 func newMsg(id string) core.Message {
 	return core.Message{ID: core.MessageID(id), Queue: "orders", Payload: []byte(id), EnqueueTime: time.Now()}
 }
@@ -17,7 +20,7 @@ func newMsg(id string) core.Message {
 func TestAck_RemovesFromWALAndDecrementsInFlight(t *testing.T) {
 	walDir := t.TempDir()
 
-	manager, err := queue.NewManager(walDir)
+	manager, err := queue.NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +28,7 @@ func TestAck_RemovesFromWALAndDecrementsInFlight(t *testing.T) {
 	consumer, _ := connmgr.NewConsumer("orders", 5)
 	registry.Register(consumer)
 	registry.IncrementInFlight(consumer.ID) // simulate dispatcher increment
-	ackMgr := ackmgr.NewAckManager(manager, registry, 5)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5, discard())
 
 	msg := newMsg("msg-1")
 	if err := manager.Enqueue(msg); err != nil {
@@ -43,7 +46,7 @@ func TestAck_RemovesFromWALAndDecrementsInFlight(t *testing.T) {
 
 	// Close and reopen with the same WAL dir — tombstone must prevent replay.
 	manager.Close()
-	manager2, err := queue.NewManager(walDir)
+	manager2, err := queue.NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +69,7 @@ func TestAck_RemovesFromWALAndDecrementsInFlight(t *testing.T) {
 }
 
 func TestNack_RequeuesWithIncrementedRetryCount(t *testing.T) {
-	manager, err := queue.NewManager(t.TempDir())
+	manager, err := queue.NewManager(t.TempDir(), discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +79,7 @@ func TestNack_RequeuesWithIncrementedRetryCount(t *testing.T) {
 	consumer, _ := connmgr.NewConsumer("orders", 5)
 	registry.Register(consumer)
 	registry.IncrementInFlight(consumer.ID)
-	ackMgr := ackmgr.NewAckManager(manager, registry, 5)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5, discard())
 
 	msg := newMsg("msg-1")
 	if err := manager.Enqueue(msg); err != nil {
@@ -129,10 +132,10 @@ func TestNack_RequeuesWithIncrementedRetryCount(t *testing.T) {
 }
 
 func TestAckNack_IdempotentForUnknownID(t *testing.T) {
-	manager, _ := queue.NewManager(t.TempDir())
+	manager, _ := queue.NewManager(t.TempDir(), discard())
 	t.Cleanup(func() { manager.Close() })
 	registry := connmgr.NewRegistry()
-	ackMgr := ackmgr.NewAckManager(manager, registry, 5)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5, discard())
 
 	if err := ackMgr.Ack("nonexistent"); err != nil {
 		t.Fatalf("Ack with unknown ID returned error: %v", err)

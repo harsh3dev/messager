@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -27,17 +28,19 @@ type Server struct {
 	registry   *connmgr.Registry
 	ackManager *ackmgr.AckManager
 	disp       *dispatcher.Dispatcher
+	log        *slog.Logger
 	mu         sync.Mutex
 	started    map[string]struct{} // queues with a running dispatcher goroutine
 }
 
-func NewServer(ctx context.Context, manager *queue.Manager, registry *connmgr.Registry, ackManager *ackmgr.AckManager, disp *dispatcher.Dispatcher) *Server {
+func NewServer(ctx context.Context, manager *queue.Manager, registry *connmgr.Registry, ackManager *ackmgr.AckManager, disp *dispatcher.Dispatcher, logger *slog.Logger) *Server {
 	return &Server{
 		ctx:        ctx,
 		manager:    manager,
 		registry:   registry,
 		ackManager: ackManager,
 		disp:       disp,
+		log:        logger.With("component", "api"),
 		started:    make(map[string]struct{}),
 	}
 }
@@ -62,9 +65,11 @@ func (s *Server) Publish(ctx context.Context, req *proto.PublishRequest) (*proto
 	}
 
 	if err := s.manager.Enqueue(msg); err != nil {
+		s.log.Error("enqueue failed", "queue", req.Queue, "msg_id", messageID, "err", err)
 		return nil, status.Errorf(codes.Internal, "enqueue: %v", err)
 	}
 
+	s.log.Info("message published", "queue", req.Queue, "msg_id", messageID, "payload_bytes", len(req.Payload))
 	return &proto.PublishResponse{MessageId: messageID}, nil
 }
 
@@ -93,6 +98,8 @@ func (s *Server) Subscribe(stream grpc.BidiStreamingServer[proto.ConsumerMessage
 	}
 	s.registry.Register(consumer)
 	s.ensureDispatcher(queueName)
+
+	s.log.Info("consumer connected", "consumer_id", consumer.ID, "queue", queueName, "prefetch", prefetchLimit)
 
 	done := make(chan error, 2)
 
@@ -139,15 +146,21 @@ func (s *Server) Subscribe(stream grpc.BidiStreamingServer[proto.ConsumerMessage
 
 	// Deregister so the dispatcher stops selecting this consumer.
 	s.registry.Deregister(consumer.ID)
+	s.log.Info("consumer disconnected", "consumer_id", consumer.ID, "queue", queueName)
 
 	// Drain messages buffered in consumer.Send that were never forwarded.
 	// These are already registered in the AckManager; NACK them immediately
 	// so they are requeued (or DLQ'd) rather than waiting for the timeout scanner.
+	drained := 0
 	for {
 		select {
 		case msg := <-consumer.Send:
 			_ = s.ackManager.Nack(msg.ID)
+			drained++
 		default:
+			if drained > 0 {
+				s.log.Warn("drained undelivered messages on disconnect", "consumer_id", consumer.ID, "count", drained)
+			}
 			return streamErr
 		}
 	}

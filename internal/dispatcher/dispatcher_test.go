@@ -2,6 +2,7 @@ package dispatcher_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -12,20 +13,22 @@ import (
 	"github.com/harsh3dev/messager/internal/queue"
 )
 
+func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 func newMsg(id string) core.Message {
 	return core.Message{ID: core.MessageID(id), Queue: "orders", Payload: []byte(id), EnqueueTime: time.Now()}
 }
 
 func newTestDispatcher(t *testing.T) (*dispatcher.Dispatcher, *queue.Manager, *connmgr.Registry) {
 	t.Helper()
-	manager, err := queue.NewManager(t.TempDir())
+	manager, err := queue.NewManager(t.TempDir(), discard())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { manager.Close() })
 	registry := connmgr.NewRegistry()
-	ackManager := ackmgr.NewAckManager(manager, registry, 3)
-	return dispatcher.NewDispatcher(manager, registry, ackManager), manager, registry
+	ackManager := ackmgr.NewAckManager(manager, registry, 3, discard())
+	return dispatcher.NewDispatcher(manager, registry, ackManager, discard()), manager, registry
 }
 
 func TestDispatcher_LoadDistributedByInFlight(t *testing.T) {

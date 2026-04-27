@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -28,19 +29,24 @@ func main() {
 	scanInterval := envOrDuration("SCAN_INTERVAL", 5*time.Second)
 	shutdownTimeout := envOrDuration("SHUTDOWN_TIMEOUT", 15*time.Second)
 
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	manager, err := queue.NewManager(walDir)
+	manager, err := queue.NewManager(walDir, logger)
 	if err != nil {
 		log.Fatalf("queue manager: %v", err)
 	}
 	defer manager.Close()
 
 	registry := connmgr.NewRegistry()
-	ackMgr := ackmgr.NewAckManager(manager, registry, maxRetries)
-	disp := dispatcher.NewDispatcher(manager, registry, ackMgr)
-	scanner := retry.NewScanner(ackMgr, scanInterval, dispatchTimeout)
+	ackMgr := ackmgr.NewAckManager(manager, registry, maxRetries, logger)
+	disp := dispatcher.NewDispatcher(manager, registry, ackMgr, logger)
+	scanner := retry.NewScanner(ackMgr, scanInterval, dispatchTimeout, logger)
 
 	go scanner.Run(ctx)
 
@@ -50,14 +56,14 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	proto.RegisterBrokerServer(grpcServer, api.NewServer(ctx, manager, registry, ackMgr, disp))
+	proto.RegisterBrokerServer(grpcServer, api.NewServer(ctx, manager, registry, ackMgr, disp, logger))
 
 	// Graceful shutdown on SIGINT or SIGTERM.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigCh
-		log.Printf("received %s, shutting down…", sig)
+		logger.Info("signal received, shutting down", "signal", sig.String())
 
 		// Stop accepting new Publish requests immediately.
 		manager.BeginShutdown()
@@ -71,20 +77,25 @@ func main() {
 		select {
 		case <-stopped:
 		case <-time.After(shutdownTimeout):
-			log.Println("graceful stop timed out, forcing")
+			logger.Warn("graceful stop timed out, forcing")
 			grpcServer.Stop()
 		}
 
 		// Wait for in-flight messages to be ACKed/NACKed before closing the WAL.
 		if !ackMgr.WaitDrained(shutdownTimeout) {
-			log.Println("warning: in-flight messages not fully drained; they will be redelivered on restart")
+			logger.Warn("in-flight messages not fully drained; they will be redelivered on restart")
 		}
 
 		cancel()
 	}()
 
-	log.Printf("messager listening on %s (maxRetries=%d dispatchTimeout=%s)",
-		listenAddr, maxRetries, dispatchTimeout)
+	logger.Info("messager broker started",
+		"addr", listenAddr,
+		"wal_dir", walDir,
+		"max_retries", maxRetries,
+		"dispatch_timeout", dispatchTimeout,
+		"scan_interval", scanInterval,
+	)
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatalf("serve: %v", err)
 	}

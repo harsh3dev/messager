@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
@@ -18,10 +19,12 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 func newTestClient(t *testing.T) (proto.BrokerClient, *queue.Manager) {
 	t.Helper()
 
-	manager, err := queue.NewManager(t.TempDir())
+	manager, err := queue.NewManager(t.TempDir(), discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +34,12 @@ func newTestClient(t *testing.T) (proto.BrokerClient, *queue.Manager) {
 	t.Cleanup(cancel)
 
 	registry := connmgr.NewRegistry()
-	ackMgr := ackmgr.NewAckManager(manager, registry, 3)
-	disp := dispatcher.NewDispatcher(manager, registry, ackMgr)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 3, discard())
+	disp := dispatcher.NewDispatcher(manager, registry, ackMgr, discard())
 
 	listener := bufconn.Listen(1 << 20)
 	grpcServer := grpc.NewServer()
-	proto.RegisterBrokerServer(grpcServer, api.NewServer(ctx, manager, registry, ackMgr, disp))
+	proto.RegisterBrokerServer(grpcServer, api.NewServer(ctx, manager, registry, ackMgr, disp, discard()))
 	go grpcServer.Serve(listener) //nolint:errcheck
 	t.Cleanup(grpcServer.Stop)
 

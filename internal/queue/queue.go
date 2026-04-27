@@ -3,6 +3,7 @@ package queue
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -20,11 +21,12 @@ type Manager struct {
 	topics  map[string]*Topic
 	writers map[string]*wal.Writer
 	closing atomic.Bool
+	log     *slog.Logger
 }
 
 // NewManager creates a Manager and replays any existing WAL files in walDir.
 // Messages surviving replay (not tombstoned) are pre-loaded into their topics.
-func NewManager(walDir string) (*Manager, error) {
+func NewManager(walDir string, logger *slog.Logger) (*Manager, error) {
 	if err := os.MkdirAll(walDir, 0755); err != nil {
 		return nil, err
 	}
@@ -33,6 +35,7 @@ func NewManager(walDir string) (*Manager, error) {
 		walDir:  walDir,
 		topics:  make(map[string]*Topic),
 		writers: make(map[string]*wal.Writer),
+		log:     logger.With("component", "queue"),
 	}
 
 	entries, err := os.ReadDir(walDir)
@@ -76,6 +79,7 @@ func (m *Manager) initQueue(queue string) error {
 
 	m.topics[queue] = t
 	m.writers[queue] = w
+	m.log.Info("queue initialised", "queue", queue, "replayed_messages", len(msgs))
 	return nil
 }
 
@@ -156,8 +160,12 @@ func (m *Manager) CompactAll() error {
 
 	var firstErr error
 	for _, q := range queues {
+		m.log.Info("compacting WAL", "queue", q)
 		if err := m.Compact(q); err != nil && firstErr == nil {
+			m.log.Error("compaction failed", "queue", q, "err", err)
 			firstErr = err
+		} else {
+			m.log.Info("compaction complete", "queue", q)
 		}
 	}
 	return firstErr

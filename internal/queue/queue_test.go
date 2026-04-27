@@ -1,11 +1,14 @@
 package queue
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/harsh3dev/messager/internal/core"
 )
+
+func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func newMsg(id, queue string) core.Message {
 	return core.Message{
@@ -17,7 +20,7 @@ func newMsg(id, queue string) core.Message {
 }
 
 func TestManager_EnqueueDequeue(t *testing.T) {
-	m, err := NewManager(t.TempDir())
+	m, err := NewManager(t.TempDir(), discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +44,7 @@ func TestManager_RestoreOnRestart(t *testing.T) {
 
 	// first run: enqueue two messages, ack one
 	func() {
-		m, err := NewManager(dir)
+		m, err := NewManager(dir, discard())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +55,7 @@ func TestManager_RestoreOnRestart(t *testing.T) {
 	}()
 
 	// second run: only "a" should survive
-	m2, err := NewManager(dir)
+	m2, err := NewManager(dir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +76,7 @@ func TestManager_WALFailureDoesNotEnqueue(t *testing.T) {
 	// Easiest: init manager with a good dir, then corrupt the writer by
 	// replacing the WAL dir with a file.
 	dir := t.TempDir()
-	m, err := NewManager(dir)
+	m, err := NewManager(dir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,14 +106,14 @@ func TestManager_EnqueueTimestampPreserved(t *testing.T) {
 	ts := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	func() {
-		m, _ := NewManager(dir)
+		m, _ := NewManager(dir, discard())
 		msg := newMsg("1", "q")
 		msg.EnqueueTime = ts
 		m.Enqueue(msg)
 		m.Close()
 	}()
 
-	m2, _ := NewManager(dir)
+	m2, _ := NewManager(dir, discard())
 	defer m2.Close()
 	got, _ := m2.Dequeue("q")
 
@@ -126,7 +129,7 @@ func TestGracefulShutdown_InFlightMessagesRequeued(t *testing.T) {
 	walDir := t.TempDir()
 
 	func() {
-		m, err := NewManager(walDir)
+		m, err := NewManager(walDir, discard())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,7 +148,7 @@ func TestGracefulShutdown_InFlightMessagesRequeued(t *testing.T) {
 	}()
 
 	// On the next start, WAL replay restores the un-tombstoned message.
-	m2, err := NewManager(walDir)
+	m2, err := NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +175,7 @@ func TestGracefulShutdown_InFlightMessagesRequeued(t *testing.T) {
 // TestBeginShutdown_RejectsNewEnqueues verifies that Enqueue returns an error
 // after BeginShutdown is called.
 func TestBeginShutdown_RejectsNewEnqueues(t *testing.T) {
-	m, err := NewManager(t.TempDir())
+	m, err := NewManager(t.TempDir(), discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +192,7 @@ func TestBeginShutdown_RejectsNewEnqueues(t *testing.T) {
 // replays identically (only un-tombstoned messages survive).
 func TestCompact_PreservesMessages(t *testing.T) {
 	walDir := t.TempDir()
-	m, err := NewManager(walDir)
+	m, err := NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +214,7 @@ func TestCompact_PreservesMessages(t *testing.T) {
 	m.Close()
 
 	// Reopen and verify: messages 1, 3, 4 must survive; 2 was tombstoned.
-	m2, err := NewManager(walDir)
+	m2, err := NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}

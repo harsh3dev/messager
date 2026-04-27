@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -17,25 +18,30 @@ type Dispatcher struct {
 	queueManager *queue.Manager
 	registry     *connmgr.Registry
 	ackManager   *ackmgr.AckManager
+	log          *slog.Logger
 }
 
-func NewDispatcher(queueManager *queue.Manager, registry *connmgr.Registry, ackManager *ackmgr.AckManager) *Dispatcher {
+func NewDispatcher(queueManager *queue.Manager, registry *connmgr.Registry, ackManager *ackmgr.AckManager, logger *slog.Logger) *Dispatcher {
 	return &Dispatcher{
 		queueManager: queueManager,
 		registry:     registry,
 		ackManager:   ackManager,
+		log:          logger.With("component", "dispatcher"),
 	}
 }
 
 // Run starts the dispatch loop for a single queue. Blocks until ctx is cancelled or the queue manager closes.
 func (d *Dispatcher) Run(ctx context.Context, queueName string) {
+	d.log.Info("dispatcher started", "queue", queueName)
 	for {
 		msg, ok := d.queueManager.Dequeue(queueName)
 		if !ok {
+			d.log.Info("dispatcher stopped", "queue", queueName)
 			return
 		}
 
 		// Hold the message and retry until an eligible consumer is available.
+		waiting := false
 		for {
 			select {
 			case <-ctx.Done():
@@ -45,6 +51,10 @@ func (d *Dispatcher) Run(ctx context.Context, queueName string) {
 
 			eligible := d.registry.EligibleConsumers(queueName)
 			if len(eligible) == 0 {
+				if !waiting {
+					d.log.Warn("no eligible consumers, waiting", "queue", queueName, "msg_id", msg.ID)
+					waiting = true
+				}
 				select {
 				case <-ctx.Done():
 					return
@@ -66,7 +76,7 @@ func (d *Dispatcher) Run(ctx context.Context, queueName string) {
 
 			select {
 			case consumer.Send <- msg:
-				// successfully queued for delivery
+				d.log.Info("message dispatched", "queue", queueName, "msg_id", msg.ID, "consumer_id", consumer.ID, "in_flight", consumer.InFlight())
 			case <-ctx.Done():
 				// Channel write was cancelled before the consumer could receive.
 				// Undo everything so the message isn't lost and in-flight is correct.

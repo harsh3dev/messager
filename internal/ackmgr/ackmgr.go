@@ -1,6 +1,7 @@
 package ackmgr
 
 import (
+	"log/slog"
 	"sync"
 	"time"
 
@@ -21,14 +22,16 @@ type AckManager struct {
 	manager    *queue.Manager
 	registry   *connmgr.Registry
 	maxRetries int32
+	log        *slog.Logger
 }
 
-func NewAckManager(manager *queue.Manager, registry *connmgr.Registry, maxRetries int32) *AckManager {
+func NewAckManager(manager *queue.Manager, registry *connmgr.Registry, maxRetries int32, logger *slog.Logger) *AckManager {
 	return &AckManager{
 		inFlight:   make(map[core.MessageID]inFlightEntry),
 		manager:    manager,
 		registry:   registry,
 		maxRetries: maxRetries,
+		log:        logger.With("component", "ackmgr"),
 	}
 }
 
@@ -67,6 +70,7 @@ func (a *AckManager) Ack(id core.MessageID) error {
 	delete(a.inFlight, id)
 	a.mu.Unlock()
 
+	a.log.Info("ack processed", "msg_id", id, "queue", entry.message.Queue, "consumer_id", entry.consumerID)
 	a.registry.DecrementInFlight(entry.consumerID)
 	return a.manager.WriteTombstone(id, entry.message.Queue)
 }
@@ -84,6 +88,7 @@ func (a *AckManager) Nack(id core.MessageID) error {
 	delete(a.inFlight, id)
 	a.mu.Unlock()
 
+	a.log.Warn("nack received", "msg_id", id, "queue", entry.message.Queue, "consumer_id", entry.consumerID, "retry_count", entry.message.RetryCount)
 	return a.nackEntry(entry)
 }
 
@@ -103,8 +108,13 @@ func (a *AckManager) ScanAndTimeout(dispatchTimeout time.Duration) error {
 	}
 	a.mu.Unlock()
 
+	if len(timedOut) > 0 {
+		a.log.Warn("messages timed out", "count", len(timedOut))
+	}
+
 	var firstErr error
 	for _, entry := range timedOut {
+		a.log.Warn("message timed out", "msg_id", entry.message.ID, "queue", entry.message.Queue, "consumer_id", entry.consumerID, "retry_count", entry.message.RetryCount, "dispatched_at", entry.message.DispatchedAt)
 		if err := a.nackEntry(entry); err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -122,8 +132,10 @@ func (a *AckManager) nackEntry(entry inFlightEntry) error {
 		dlqMsg := entry.message
 		dlqMsg.Queue = entry.message.Queue + ".dlq"
 		dlqMsg.Status = core.StatusDead
+		a.log.Error("message dead-lettered", "msg_id", entry.message.ID, "src_queue", entry.message.Queue, "dlq", dlqMsg.Queue, "retry_count", entry.message.RetryCount)
 		return a.manager.Enqueue(dlqMsg)
 	}
+	a.log.Info("message requeued for retry", "msg_id", entry.message.ID, "queue", entry.message.Queue, "retry_count", entry.message.RetryCount+1, "max_retries", a.maxRetries)
 	return a.manager.Enqueue(entry.message.WithRetry())
 }
 

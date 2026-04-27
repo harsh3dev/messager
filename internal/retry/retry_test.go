@@ -2,6 +2,7 @@ package retry_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -12,12 +13,14 @@ import (
 	"github.com/harsh3dev/messager/internal/retry"
 )
 
+func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
 // newEnv sets up a manager, registry, consumer (with one in-flight pre-incremented),
 // and an AckManager. The manager is NOT registered for cleanup so callers that need
 // to close and reopen it can manage the lifetime themselves.
 func newEnv(t *testing.T, walDir string, maxRetries int32) (*ackmgr.AckManager, *queue.Manager, *connmgr.Consumer) {
 	t.Helper()
-	manager, err := queue.NewManager(walDir)
+	manager, err := queue.NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +28,7 @@ func newEnv(t *testing.T, walDir string, maxRetries int32) (*ackmgr.AckManager, 
 	consumer, _ := connmgr.NewConsumer("orders", 5)
 	registry.Register(consumer)
 	registry.IncrementInFlight(consumer.ID)
-	return ackmgr.NewAckManager(manager, registry, maxRetries), manager, consumer
+	return ackmgr.NewAckManager(manager, registry, maxRetries, discard()), manager, consumer
 }
 
 // timedOutMsg returns a message whose DispatchedAt is well in the past.
@@ -47,7 +50,7 @@ func TestScanner_RequeuesTimedOutMessage(t *testing.T) {
 	ackMgr, manager, consumer := newEnv(t, t.TempDir(), 5)
 	t.Cleanup(func() { manager.Close() })
 
-	scanner := retry.NewScanner(ackMgr, 10*time.Millisecond, 100*time.Millisecond)
+	scanner := retry.NewScanner(ackMgr, 10*time.Millisecond, 100*time.Millisecond, discard())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go scanner.Run(ctx)
@@ -139,7 +142,7 @@ func TestDLQ_PersistsAcrossRestart(t *testing.T) {
 	manager.Close()
 
 	// Reopen the manager — DLQ WAL must be replayed.
-	manager2, err := queue.NewManager(walDir)
+	manager2, err := queue.NewManager(walDir, discard())
 	if err != nil {
 		t.Fatal(err)
 	}
