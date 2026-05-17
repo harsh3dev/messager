@@ -26,11 +26,13 @@ If you rewrote the WAL in place and crashed mid-write, you'd have a partially wr
 - Crash after rename → compacted WAL is complete and valid
 - There's no window where the data is at risk
 
-**When to call it**
-
-Right now `CompactAll()` exists but nothing calls it automatically. In Phase 9 or as an operational tool you'd trigger it:
-- On a schedule (e.g., every hour via a goroutine in main.go)
-- When the WAL file exceeds a size threshold
-- Manually as a maintenance operation
-
 Without compaction, the WAL grows without bound and restart time grows proportionally (it has to replay every record ever written).
+
+**How to call it**
+
+Compaction is invoked from Go, not a separate binary.
+
+- **Per queue** — if you have a `*queue.Manager` (for example from `queue.NewManager` in the broker), call `Compact(queueName)`. The queue must already exist in the manager (a WAL was opened for it); if the name is unknown, `Compact` returns `nil` (no-op).
+- **All queues** — `CompactAll()` compacts every queue that currently has a WAL writer.
+
+The underlying implementation is `(*wal.Writer).Compact()` in `internal/wal/compactor.go`: replay the WAL, write survivors to a `.tmp` file, verify, then rename over the original WAL.
