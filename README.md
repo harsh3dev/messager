@@ -156,6 +156,7 @@ Consumer sends an initial `SubscribeRequest` (queue name + prefetch limit), then
 
 - **At-least-once delivery** — a message is redelivered if the consumer NACKs, disconnects, or fails to ACK within the dispatch timeout.
 - **Retry with DLQ** — messages that exceed `MAX_RETRIES` are moved to a dead-letter queue (`<queue>.dlq.wal`) and are not redelivered to the main queue.
+- **DLQ TTL** — messages on `*.dlq` queues older than `DLQ_TTL` (default 30 days) are tombstoned and dropped; main queues are unaffected.
 - **Crash recovery** — unacknowledged messages are replayed from the WAL on restart with their original retry count preserved.
 
 ## Configuration
@@ -169,6 +170,8 @@ The broker is configured via environment variables:
 | `MAX_RETRIES` | `3` | Maximum delivery attempts before DLQ |
 | `DISPATCH_TIMEOUT` | `30s` | Time before an unacknowledged in-flight message is NACKed |
 | `SCAN_INTERVAL` | `5s` | How often the retry scanner checks for timed-out messages |
+| `DLQ_TTL` | `720h` (30 days) | Max age for messages on `*.dlq` queues before automatic expiration |
+| `DLQ_TTL_SCAN_INTERVAL` | `1h` | How often the DLQ TTL scanner runs |
 | `SHUTDOWN_TIMEOUT` | `15s` | Grace period for draining in-flight messages on shutdown |
 
 ## Building

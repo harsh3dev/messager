@@ -9,6 +9,7 @@ import (
 	"github.com/harsh3dev/messager/internal/connmgr"
 	"github.com/harsh3dev/messager/internal/core"
 	"github.com/harsh3dev/messager/internal/queue"
+	"github.com/harsh3dev/messager/internal/wal"
 )
 
 func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -128,6 +129,116 @@ func TestNack_RequeuesWithIncrementedRetryCount(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for requeued message")
+	}
+}
+
+func TestExpireDLQInFlight(t *testing.T) {
+	walDir := t.TempDir()
+	manager, err := queue.NewManager(walDir, discard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+
+	registry := connmgr.NewRegistry()
+	consumer, _ := connmgr.NewConsumer("orders.dlq", 5)
+	registry.Register(consumer)
+	registry.IncrementInFlight(consumer.ID)
+
+	ackMgr := ackmgr.NewAckManager(manager, registry, 5, discard())
+
+	msg := core.Message{
+		ID:          "expired",
+		Queue:       "orders.dlq",
+		Payload:     []byte("x"),
+		EnqueueTime: time.Now().Add(-31 * 24 * time.Hour),
+	}
+	if err := manager.Enqueue(msg); err != nil {
+		t.Fatal(err)
+	}
+
+	dispatched := make(chan core.Message, 1)
+	go func() {
+		m, ok := manager.Dequeue("orders.dlq")
+		if ok {
+			dispatched <- m
+		}
+	}()
+	select {
+	case msg = <-dispatched:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for dequeue")
+	}
+	ackMgr.Register(msg, consumer.ID)
+
+	cutoff := time.Now().Add(-30 * 24 * time.Hour)
+	n, err := ackMgr.ExpireDLQInFlight(cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 expired, got %d", n)
+	}
+	if consumer.InFlight() != 0 {
+		t.Fatalf("want inFlight=0, got %d", consumer.InFlight())
+	}
+
+	manager.Close()
+	msgs, err := wal.NewReader(walDir, "orders.dlq").Replay()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expired in-flight dlq message must not replay, got %v", msgs)
+	}
+}
+
+func TestNack_ToDLQ_ResetsEnqueueTime(t *testing.T) {
+	manager, err := queue.NewManager(t.TempDir(), discard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+
+	registry := connmgr.NewRegistry()
+	consumer, _ := connmgr.NewConsumer("orders", 1)
+	registry.Register(consumer)
+	registry.IncrementInFlight(consumer.ID)
+	ackMgr := ackmgr.NewAckManager(manager, registry, 0, discard())
+
+	before := time.Now()
+	oldTime := before.Add(-48 * time.Hour)
+	msg := core.Message{
+		ID:          "dlq-1",
+		Queue:       "orders",
+		Payload:     []byte("x"),
+		EnqueueTime: oldTime,
+		RetryCount:  0,
+	}
+	if err := manager.Enqueue(msg); err != nil {
+		t.Fatal(err)
+	}
+	ackMgr.Register(msg, consumer.ID)
+
+	if err := ackMgr.Nack(msg.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	got := make(chan core.Message, 1)
+	go func() {
+		m, ok := manager.Dequeue("orders.dlq")
+		if ok {
+			got <- m
+		}
+	}()
+
+	select {
+	case m := <-got:
+		if !m.EnqueueTime.After(before) {
+			t.Fatalf("dlq EnqueueTime should be reset on dead-letter, got %v", m.EnqueueTime)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for dlq message")
 	}
 }
 

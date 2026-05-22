@@ -49,6 +49,24 @@ func (t *Topic) Dequeue() (core.Message, bool) {
 	return msg, true
 }
 
+// RemoveIf removes messages matching pred from the topic and returns them.
+func (t *Topic) RemoveIf(pred func(core.Message) bool) []core.Message {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	var removed []core.Message
+	kept := t.msgs[:0]
+	for _, msg := range t.msgs {
+		if pred(msg) {
+			removed = append(removed, msg)
+		} else {
+			kept = append(kept, msg)
+		}
+	}
+	t.msgs = kept
+	return removed
+}
+
 // Len returns the current number of queued messages.
 func (t *Topic) Len() int {
 	t.mu.Lock()

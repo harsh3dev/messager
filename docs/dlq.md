@@ -37,3 +37,7 @@ On startup, `queue.NewManager` scans the WAL directory for `*.wal` files. It fin
 Both call `nackEntry` — they behave identically from the DLQ's perspective.
 
 **The retry counter** (`RetryCount`) lives on the `Message` struct and is incremented by `WithRetry()` on each re-enqueue. It's also written into the WAL record (`"r"` field in `recordMsg`), so it's preserved across restarts. When the count reaches `maxRetries`, the next failure routes to DLQ instead of requeueing.
+
+**DLQ TTL (30 days default)**
+
+When a message is dead-lettered, `EnqueueTime` is reset to the dead-letter time (used as the TTL clock). A background scanner (`internal/dlqttl`) runs every `DLQ_TTL_SCAN_INTERVAL` and tombstones DLQ messages older than `DLQ_TTL` (default `720h`). This applies only to queues ending in `.dlq` — main queues are never expired. Set `DLQ_TTL=0` to disable.

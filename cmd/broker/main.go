@@ -15,6 +15,7 @@ import (
 	"github.com/harsh3dev/messager/internal/api"
 	"github.com/harsh3dev/messager/internal/connmgr"
 	"github.com/harsh3dev/messager/internal/dispatcher"
+	"github.com/harsh3dev/messager/internal/dlqttl"
 	"github.com/harsh3dev/messager/internal/queue"
 	"github.com/harsh3dev/messager/internal/retry"
 	proto "github.com/harsh3dev/messager/proto/gen"
@@ -27,6 +28,8 @@ func main() {
 	maxRetries := int32(envOrInt("MAX_RETRIES", 3))
 	dispatchTimeout := envOrDuration("DISPATCH_TIMEOUT", 30*time.Second)
 	scanInterval := envOrDuration("SCAN_INTERVAL", 5*time.Second)
+	dlqTTL := envOrDuration("DLQ_TTL", 30*24*time.Hour)
+	dlqTTLScanInterval := envOrDuration("DLQ_TTL_SCAN_INTERVAL", time.Hour)
 	shutdownTimeout := envOrDuration("SHUTDOWN_TIMEOUT", 15*time.Second)
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -47,8 +50,10 @@ func main() {
 	ackMgr := ackmgr.NewAckManager(manager, registry, maxRetries, logger)
 	disp := dispatcher.NewDispatcher(manager, registry, ackMgr, logger)
 	scanner := retry.NewScanner(ackMgr, scanInterval, dispatchTimeout, logger)
+	dlqScanner := dlqttl.NewScanner(manager, ackMgr, dlqTTL, dlqTTLScanInterval, logger)
 
 	go scanner.Run(ctx)
+	go dlqScanner.Run(ctx)
 
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -95,6 +100,8 @@ func main() {
 		"max_retries", maxRetries,
 		"dispatch_timeout", dispatchTimeout,
 		"scan_interval", scanInterval,
+		"dlq_ttl", dlqTTL,
+		"dlq_ttl_scan_interval", dlqTTLScanInterval,
 	)
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatalf("serve: %v", err)

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 	"sync/atomic"
 
 	"github.com/harsh3dev/messager/internal/core"
@@ -134,6 +135,60 @@ func (m *Manager) WriteTombstone(id core.MessageID, queue string) error {
 		return fmt.Errorf("queue %q not found", queue)
 	}
 	return w.WriteTombstone(id)
+}
+
+func (m *Manager) ExpireDLQOlderThan(retention time.Duration) (int, error) {
+	if retention <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().Add(-retention)
+
+	m.mu.Lock()
+	dlqQueues := make([]string, 0)
+	for q := range m.writers {
+		if core.IsDLQQueue(q) {
+			dlqQueues = append(dlqQueues, q)
+		}
+	}
+	m.mu.Unlock()
+
+	var total int
+	var firstErr error
+	for _, queue := range dlqQueues {
+		n, err := m.expireDLQQueue(queue, cutoff)
+		total += n
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return total, firstErr
+}
+
+func (m *Manager) expireDLQQueue(queue string, cutoff time.Time) (int, error) {
+	m.mu.Lock()
+	if err := m.initQueue(queue); err != nil {
+		m.mu.Unlock()
+		return 0, err
+	}
+	t := m.topics[queue]
+	w := m.writers[queue]
+	m.mu.Unlock()
+
+	removed := t.RemoveIf(func(msg core.Message) bool {
+		return msg.EnqueueTime.Before(cutoff)
+	})
+	if len(removed) == 0 {
+		return 0, nil
+	}
+
+	var firstErr error
+	for _, msg := range removed {
+		m.log.Info("dlq message expired", "queue", queue, "msg_id", msg.ID, "enqueue_time", msg.EnqueueTime)
+		if err := w.WriteTombstone(msg.ID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return len(removed), firstErr
 }
 
 // Compact rewrites the WAL for a single queue, dropping all tombstoned records.

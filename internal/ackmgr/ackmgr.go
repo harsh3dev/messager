@@ -122,6 +122,30 @@ func (a *AckManager) ScanAndTimeout(dispatchTimeout time.Duration) error {
 	return firstErr
 }
 
+// ExpireDLQInFlight tombstones in-flight DLQ messages older than cutoff without requeue.
+// Only messages on queues ending with .dlq are affected.
+func (a *AckManager) ExpireDLQInFlight(cutoff time.Time) (int, error) {
+	a.mu.Lock()
+	var expired []inFlightEntry
+	for id, entry := range a.inFlight {
+		if core.IsDLQQueue(entry.message.Queue) && entry.message.EnqueueTime.Before(cutoff) {
+			expired = append(expired, entry)
+			delete(a.inFlight, id)
+		}
+	}
+	a.mu.Unlock()
+
+	var firstErr error
+	for _, entry := range expired {
+		a.log.Info("dlq in-flight message expired", "msg_id", entry.message.ID, "queue", entry.message.Queue, "enqueue_time", entry.message.EnqueueTime)
+		a.registry.DecrementInFlight(entry.consumerID)
+		if err := a.manager.WriteTombstone(entry.message.ID, entry.message.Queue); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return len(expired), firstErr
+}
+
 // nackEntry decrements the consumer's in-flight counter, then either re-enqueues
 // the message with an incremented retry count or sends it to the DLQ if retries
 // are exhausted.
@@ -130,7 +154,8 @@ func (a *AckManager) nackEntry(entry inFlightEntry) error {
 
 	if entry.message.RetryCount >= a.maxRetries {
 		dlqMsg := entry.message
-		dlqMsg.Queue = entry.message.Queue + ".dlq"
+		dlqMsg.Queue = entry.message.Queue + core.DLQSuffix
+		dlqMsg.EnqueueTime = time.Now()
 		dlqMsg.Status = core.StatusDead
 		a.log.Error("message dead-lettered", "msg_id", entry.message.ID, "src_queue", entry.message.Queue, "dlq", dlqMsg.Queue, "retry_count", entry.message.RetryCount)
 		return a.manager.Enqueue(dlqMsg)
